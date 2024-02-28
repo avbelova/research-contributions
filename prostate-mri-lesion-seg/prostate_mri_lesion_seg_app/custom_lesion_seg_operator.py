@@ -65,6 +65,7 @@ import numpy as np
 # AI/CV imports
 import SimpleITK as sitk
 import torch
+import openvino as ov
 
 # Local imports
 from network import RRUNet3D
@@ -275,7 +276,7 @@ class CustomProstateLesionSegOperator(Operator):
             attention=False,
             debug=False,
         )
-        net = net.to("cuda")
+        net = net.to("cpu")
         net.eval()
 
         # Set model weights to models in container
@@ -293,7 +294,7 @@ class CustomProstateLesionSegOperator(Operator):
         validation_dataset = SegmentationDataset(output_path=output_path, data_purpose="testing")
         validation_loader = torch.utils.data.DataLoader(validation_dataset, batch_size=1, shuffle=False, num_workers=1)
         data = next(iter(validation_loader))
-        inputs = data["image"].to("cuda")
+        inputs = data["image"].to("cpu")
         inputs_shape = (inputs.size()[-3], inputs.size()[-2], inputs.size()[-1])
         print("inputs_shape:", inputs_shape)
 
@@ -378,8 +379,12 @@ class CustomProstateLesionSegOperator(Operator):
 
         # Load model
         current_model_path = model_name
-        current_model = torch.load(current_model_path)
+        current_model = torch.load(current_model_path, map_location=torch.device('cpu'))
         net.load_state_dict(current_model["state_dict"])
+        dummy_inp = torch.rand(1, 3, 192, 160, 160)
+        net_ov = ov.convert_model(net, example_input=dummy_inp)
+        core = ov.Core()
+        comp_net=core.compile_model(net_ov, "CPU")
 
         # Initialize variables
         np_output_prob = np.zeros(shape=(output_classes,) + inputs_shape, dtype=np.float32)
@@ -403,8 +408,9 @@ class CustomProstateLesionSegOperator(Operator):
             for rx in ranges_x:
                 for ry in ranges_y:
                     for rz in ranges_z:
-                        output_patch = net(inputs[..., rx[0] : rx[1], ry[0] : ry[1], rz[0] : rz[1]])
-                        output_patch = output_patch.cpu().detach().numpy()
+                        #output_patch = net(inputs[..., rx[0] : rx[1], ry[0] : ry[1], rz[0] : rz[1]])
+                        #output_patch = output_patch.cpu().detach().numpy()
+                        output_patch=comp_net(inputs[..., rx[0] : rx[1], ry[0] : ry[1], rz[0] : rz[1]])[0]
                         output_patch = np.squeeze(output_patch)
                         np_output_prob[..., rx[0] : rx[1], ry[0] : ry[1], rz[0] : rz[1]] += output_patch
                         np_count[..., rx[0] : rx[1], ry[0] : ry[1], rz[0] : rz[1]] += 1.0
