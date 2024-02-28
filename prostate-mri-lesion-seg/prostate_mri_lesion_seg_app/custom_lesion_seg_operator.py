@@ -408,8 +408,6 @@ class CustomProstateLesionSegOperator(Operator):
             for rx in ranges_x:
                 for ry in ranges_y:
                     for rz in ranges_z:
-                        #output_patch = net(inputs[..., rx[0] : rx[1], ry[0] : ry[1], rz[0] : rz[1]])
-                        #output_patch = output_patch.cpu().detach().numpy()
                         output_patch=comp_net(inputs[..., rx[0] : rx[1], ry[0] : ry[1], rz[0] : rz[1]])[0]
                         output_patch = np.squeeze(output_patch)
                         np_output_prob[..., rx[0] : rx[1], ry[0] : ry[1], rz[0] : rz[1]] += output_patch
